@@ -39,7 +39,11 @@ endif (NOT CL_USED)
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules (LIBMODBUS REQUIRED libmodbus>=3.1.4)
+#pkg_check_modules (LIBMODBUS REQUIRED libmodbus>=3.1.4)
+
+set(LIBMODBUS_INCLUDE_DIRS /usr/local/include/modbus)
+set(LIBMODBUS_LIBRARY_DIRS /usr/local/lib)
+set(LIBMODBUS_LIBRARIES modbus)
 
 link_directories(${LIBMODBUS_LIBRARY_DIRS})
 add_definitions(${LIBMODBUS_CFLAGS})
