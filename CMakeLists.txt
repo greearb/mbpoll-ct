@@ -60,8 +60,8 @@ if(WIN32)
 else(WIN32)
   # pkg_check_modules (LIBMODBUS REQUIRED libmodbus>=3.1.4)
 
-  set(LIBMODBUS_INCLUDE_DIRS /usr/local/include/modbus)
-  set(LIBMODBUS_LIBRARY_DIRS /usr/local/lib)
+  set(LIBMODBUS_INCLUDE_DIRS /usr/local/include/modbus;$ENV{LIBMODBUS_INCLUDES})
+  set(LIBMODBUS_LIBRARY_DIRS /usr/local/lib;$ENV{LIBMODBUS_LIBDIRS})
   set(LIBMODBUS_LIBRARIES modbus)
 
   link_directories(${LIBMODBUS_LIBRARY_DIRS})
