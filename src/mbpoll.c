@@ -74,6 +74,18 @@
 #define MAX(a,b) (((a)>(b))?(a):(b))
 #endif
 
+int mb_max(int a, int b) {
+   if (a > b)
+      return a;
+   return b;
+}
+
+int mb_min(int a, int b) {
+   if (a < b)
+      return a;
+   return b;
+}
+
 /* types ==================================================================== */
 typedef enum {
   eModeRtu,
@@ -700,7 +712,7 @@ main (int argc, char **argv) {
   if (! ctx.bIsReportSlaveID) {
 
     // Calcul du nombre de données à écrire
-    int iNbToWrite = MAX (0, argc - optind - 1);
+    int iNbToWrite = mb_max(0, argc - optind - 1);
     if (iNbToWrite) {
       if (!ctx.bIsWrite) {
 
@@ -1647,8 +1659,8 @@ iGetIntList (const char * name, const char * sList, int * iLen) {
         int iRange, iLast;
 
         // i est dernier d'une plage first:last
-        iLast = MAX (iFirst, i);
-        iFirst = MIN (iFirst, i);
+        iLast = mb_max (iFirst, i);
+        iFirst = mb_min (iFirst, i);
         iRange = iLast - iFirst + 1;
         PDEBUG ("Is Last, add %d items\n", iRange);
         iCount += iRange;
@@ -1695,8 +1707,8 @@ iGetIntList (const char * name, const char * sList, int * iLen) {
         if (bIsLast) {
 
           // i est dernier d'une plage first:last
-          int iLast = MAX (iFirst, i);
-          iFirst = MIN (iFirst, i);
+          int iLast = mb_max (iFirst, i);
+          iFirst = mb_min (iFirst, i);
 
           for (i = iFirst; i <= iLast; i++) {
 
