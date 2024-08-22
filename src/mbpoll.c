@@ -98,6 +98,8 @@ typedef enum {
   eFuncDiscreteInput = 1,
   eFuncInputReg = 3,
   eFuncHoldingReg = 4,
+  eFuncXinjeCoil = 30,
+  eFuncXinjeReg = 32,
   eFuncUnknown = -1,
 } eFunctions;
 
@@ -120,6 +122,7 @@ typedef enum {
  */
 #define DUINT8(p,i) ((uint8_t *)(p))[i]
 #define DUINT16(p,i) ((uint16_t *)(p))[i]
+#define DUINT32(p,i) ((uint32_t *)(p))[i]
 #define DINT32(p,i) ((int32_t *)(p))[i]
 #define DFLOAT(p,i) ((float *)(p))[i]
 
@@ -191,13 +194,17 @@ static const char * sFunctionList[] = {
   "discrete output (coil)",
   "discrete input",
   "input register",
-  "output (holding) register"
+  "output (holding) register",
+  "XinJE coil",
+  "XinJE register"
 };
 static const int iFunctionList[] = {
   eFuncCoil,
   eFuncDiscreteInput,
   eFuncInputReg,
-  eFuncHoldingReg
+  eFuncHoldingReg,
+  eFuncXinjeCoil,
+  eFuncXinjeReg,
 };
 
 static const char sModeStr[] = "mode";
@@ -237,7 +244,7 @@ typedef struct xMbPollContext {
   eFormats eFormat;
   int * piSlaveAddr;
   int iSlaveCount;
-  int * piStartRef;
+  uint32_t * piStartRef;
   int iStartCount;
   int iCount;
   int iPollRate;
@@ -350,7 +357,7 @@ static const char * short_options = "m:a:r:c:t:1l:o:p:b:d:s:P:u0WRFhVvwBq";
 
 /* private functions ======================================================== */
 void vAllocate (xMbPollContext * ctx);
-void vPrintReadValues (int iAddr, int iCount, xMbPollContext * ctx);
+void vPrintReadValues (uint32_t iAddr, int iCount, xMbPollContext * ctx);
 void vPrintConfig (const xMbPollContext * ctx);
 void vPrintCommunicationSetup (const xMbPollContext * ctx);
 void vReportSlaveID (const xMbPollContext * ctx);
@@ -365,6 +372,7 @@ void vCheckEnum (const char * sName, int iElmt, const int * iList, int iSize);
 void vCheckIntRange (const char * sName, int i, int min, int max);
 void vCheckDoubleRange (const char * sName, double d, double min, double max);
 int iGetInt (const char * sName, const char * sNum, int iBase);
+uint32_t * iGetUIntList (const char * sName, const char * sList, int * iLen);
 int * iGetIntList (const char * sName, const char * sList, int * iLen);
 void vPrintIntList (int * iList, int iLen);
 double dGetDouble (const char * sName, const char * sNum);
@@ -481,7 +489,7 @@ main (int argc, char **argv) {
         break;
 
       case 'r':
-        ctx.piStartRef = iGetIntList (sStartRefStr, optarg, &ctx.iStartCount);
+        ctx.piStartRef = iGetUIntList (sStartRefStr, optarg, &ctx.iStartCount);
         break;
 
       case 'c':
@@ -626,16 +634,19 @@ main (int argc, char **argv) {
   }
 
   int i;
-  if (ctx.iPduOffset) {
-    for (i = 0; i < ctx.iStartCount; i++) {
-      vCheckIntRange (sStartRefStr, ctx.piStartRef[i],
-                      STARTREF_MIN, STARTREF_MAX);
+
+  if (!(ctx.eFunction == eFuncXinjeCoil || ctx.eFunction == eFuncXinjeReg)) {
+    if (ctx.iPduOffset) {
+      for (i = 0; i < ctx.iStartCount; i++) {
+        vCheckIntRange (sStartRefStr, ctx.piStartRef[i],
+                        STARTREF_MIN, STARTREF_MAX);
+      }
     }
-  }
-  else {
-    for (i = 0; i < ctx.iStartCount; i++) {
-      vCheckIntRange (sStartRefStr, ctx.piStartRef[i],
-                      STARTREF_MIN - 1, STARTREF_MAX - 1);
+    else {
+      for (i = 0; i < ctx.iStartCount; i++) {
+        vCheckIntRange (sStartRefStr, ctx.piStartRef[i],
+                        STARTREF_MIN - 1, STARTREF_MAX - 1);
+      }
     }
   }
 
@@ -745,6 +756,7 @@ main (int argc, char **argv) {
             break;
 
           case eFuncCoil:
+          case eFuncXinjeCoil:
             // 1 octets contient 8 coils
             iValue = iGetInt (sDataStr, argv[arg], 10);
             vCheckIntRange (sDataStr, iValue, 0, 1);
@@ -779,6 +791,20 @@ main (int argc, char **argv) {
               vCheckIntRange (sDataStr, iValue, 0, UINT16_MAX);
               DUINT16 (ctx.pvData, i) = (uint16_t) iValue;
               PDEBUG ("Word[%d]=0x%X\n", i, DUINT16 (ctx.pvData, i));
+            }
+            break;
+
+          case eFuncXinjeReg:
+            if (ctx.eFormat == eFormatFloat) {
+              dValue = dGetDouble (sDataStr, argv[arg]);
+              PDEBUG ("%g,%g\n", FLT_MIN, FLT_MAX);
+              vCheckDoubleRange (sDataStr, dValue, -FLT_MAX, FLT_MAX);
+              DFLOAT (ctx.pvData, i) = fSwapFloat ( (float) dValue);
+              PDEBUG ("Float[%d]=%g\n", i, fSwapFloat (DFLOAT (ctx.pvData, i)));
+            }
+            else { // int
+              DINT32 (ctx.pvData, i) = lSwapLong (iGetInt (sDataStr, argv[arg], 10));
+              PDEBUG ("Int[%d]=%"PRId32"\n", i, lSwapLong (DINT32 (ctx.pvData, i)));
             }
             break;
 
@@ -943,6 +969,18 @@ main (int argc, char **argv) {
             }
             break;
 
+          case eFuncXinjeCoil:
+            // We have only implemented write_bit for Xinje TCP
+            iRet = modbus_write_xinje_bit(ctx.xBus, iStartReg, DUINT8(ctx.pvData, 0));
+            iNbReg = 1;
+            break;
+
+          case eFuncXinjeReg:
+            // Registers are always 32 bits wide for Xinje TCP
+            iRet = modbus_write_xinje_register(ctx.xBus, iStartReg, DUINT32(ctx.pvData, 0));
+            iNbReg = 1;
+            break;
+
           default: // Impossible, la valeur a été vérifiée, évite un warning de gcc
             break;
         }
@@ -1003,10 +1041,26 @@ main (int argc, char **argv) {
                                               ctx.pvData);
                 break;
 
+              case eFuncXinjeCoil:
+                iRet = modbus_read_xinje_bits(ctx.xBus, iStartReg, iNbReg,
+                                              ctx.pvData);
+                break;
+
+              case eFuncXinjeReg:
+                iRet = modbus_read_xinje_registers(ctx.xBus, iStartReg, iNbReg,
+                                                   ctx.pvData);
+                break;
+
               default: // Impossible, la valeur a été vérifiée, évite un warning de gcc
                 break;
 
             }
+
+            // XinJE uses the number of registers as the word size, not as an actual reg count
+            if (ctx.eFunction == eFuncXinjeReg) {
+              iNbReg = 1;
+            }
+
             if (iRet == iNbReg) {
 
               ctx.iRxCount++;
@@ -1014,8 +1068,8 @@ main (int argc, char **argv) {
             }
             else {
               ctx.iErrorCount++;
-              fprintf (stderr, "Read %s failed: %s\n",
-                       sFunctionToStr (ctx.eFunction),
+              fprintf (stderr, "Read %s failed: iRet=%d, iNbReg=%d, %s\n",
+                       sFunctionToStr (ctx.eFunction), iRet, iNbReg,
                        modbus_strerror (errno));
             }
           }
@@ -1039,11 +1093,11 @@ main (int argc, char **argv) {
 
 // -----------------------------------------------------------------------------
 void
-vPrintReadValues (int iAddr, int iCount, xMbPollContext * ctx) {
+vPrintReadValues (uint32_t iAddr, int iCount, xMbPollContext * ctx) {
   int i;
   for (i = 0; i < iCount; i++) {
 
-    printf ("[%d]: \t", iAddr);
+    printf ("[%u]: \t", iAddr);
 
     switch (ctx->eFormat) {
 
@@ -1206,7 +1260,7 @@ vPrintConfig (const xMbPollContext * ctx) {
   vPrintIntList (ctx->piSlaveAddr, ctx->iSlaveCount);
   if (ctx->iStartCount > 1) {
     printf ("\n                        start reference = ");
-    vPrintIntList (ctx->piStartRef, ctx->iStartCount);
+    vPrintIntList ((int *)ctx->piStartRef, ctx->iStartCount);
     printf ("\n");
   }
   else {
@@ -1267,6 +1321,7 @@ vAllocate (xMbPollContext * ctx) {
 
     case eFuncCoil:
     case eFuncDiscreteInput:
+    case eFuncXinjeCoil:
       // 1 bit est stocké dans un octet
       break;
 
@@ -1280,6 +1335,11 @@ vAllocate (xMbPollContext * ctx) {
         // Registres 16-bits
         ulDataSize *= 2;
       }
+      break;
+
+    case eFuncXinjeReg:
+      // Xinje registers are only implemented for 32 bits
+      ulDataSize *= 4;
       break;
 
     default: // Impossible, la valeur a été vérifiée, évite un warning de gcc
@@ -1618,6 +1678,124 @@ vPrintIntList (int * iList, int iLen) {
   }
 }
 
+uint32_t *
+iGetUIntList (const char * name, const char * sList, int * iLen) {
+  // 12,3,5:9,45
+
+  uint32_t * iList = NULL;
+  uint32_t i, iFirst = 0, iCount = 0;
+  bool bIsLast = false;
+  const char * p = sList;
+  char * endptr;
+
+  PDEBUG ("iGetUIntList(%s)\n", sList);
+
+  // Comptage et vérification de la liste des entiers
+  while (*p) {
+
+    i = strtol (p, &endptr, 0);
+    if (endptr == p) {
+
+      vSyntaxErrorExit ("Illegal %s value: %s", name, p);
+    }
+    p = endptr;
+    PDEBUG ("Integer found: %d\n", i);
+
+    if (*p == ':') {
+
+      // i est le premier d'un plage first:last
+      if (bIsLast) {
+        // il ne peut pas y avoir 2 * ':' de suite !
+        vSyntaxErrorExit ("Illegal %s delimiter: '%c'", name, *p);
+      }
+      PDEBUG ("Is First\n");
+      iFirst = i;
+      bIsLast = true;
+    }
+    else if ( (*p == ',') || (*p == 0)) {
+
+      if (bIsLast) {
+        int iRange, iLast;
+
+        // i est dernier d'une plage first:last
+        iLast = mb_max (iFirst, i);
+        iFirst = mb_min (iFirst, i);
+        iRange = iLast - iFirst + 1;
+        PDEBUG ("Is Last, add %d items\n", iRange);
+        iCount += iRange;
+        bIsLast = false;
+      }
+      else {
+
+        iCount++;
+      }
+    }
+    else {
+
+      vSyntaxErrorExit ("Illegal %s delimiter: '%c'", name, *p);
+    }
+
+    if (*p) {
+
+      p++; // On passe le délimiteur
+    }
+    PDEBUG ("iCount=%d\n", iCount);
+  }
+
+  if (iCount > 0) {
+    int iIndex = 0;
+
+    // Allocation
+    iList = calloc (iCount, sizeof (uint32_t));
+
+    // Affectation
+    p = sList;
+    while (*p) {
+
+      i = strtol (p, &endptr, 0);
+      p = endptr;
+
+      if (*p == ':') {
+
+        // i est le premier d'un plage first:last
+        iFirst = i;
+        bIsLast = true;
+      }
+      else if ( (*p == ',') || (*p == 0)) {
+
+        if (bIsLast) {
+
+          // i est dernier d'une plage first:last
+          int iLast = mb_max (iFirst, i);
+          iFirst = mb_min (iFirst, i);
+
+          for (i = iFirst; i <= iLast; i++) {
+
+            iList[iIndex++] = i;
+          }
+          bIsLast = false;
+        }
+        else {
+
+          iList[iIndex++] = i;
+        }
+      }
+
+      if (*p) {
+
+        p++; // On passe le délimiteur
+      }
+    }
+#ifdef DEBUG
+    if (ctx.bIsVerbose) {
+      vPrintIntList (iList, iCount);
+      putchar ('\n');
+    }
+#endif
+  }
+  *iLen = iCount;
+  return iList;
+}
 // -----------------------------------------------------------------------------
 int *
 iGetIntList (const char * name, const char * sList, int * iLen) {
